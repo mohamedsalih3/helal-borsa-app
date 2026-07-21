@@ -59,6 +59,7 @@ max_news_hours = age_map[news_age_option]
 # ----------------------------------------------------
 
 def get_polygon_data(ticker):
+    """Hissenin son fiyat ve hacmini çeker."""
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev?adjusted=true&apiKey={POLYGON_KEY}"
     try:
         response = requests.get(url, timeout=5)
@@ -72,6 +73,7 @@ def get_polygon_data(ticker):
     return None
 
 def get_polygon_news(ticker, max_hours):
+    """Hissenin en son haberini çeker ve tarih kontrolü yapar."""
     url = f"https://api.polygon.io/v2/reference/news?ticker={ticker}&limit=1&apiKey={POLYGON_KEY}"
     try:
         response = requests.get(url, timeout=5)
@@ -85,6 +87,7 @@ def get_polygon_news(ticker, max_hours):
                     now = datetime.now(timezone.utc)
                     diff_hours = (now - pub_date).total_seconds() / 3600
                     
+                    # Eğer haber belirlediğimiz yaş sınırının içindeyse kabul et
                     if diff_hours <= max_hours:
                         return {
                             "title": results[0].get("title"),
@@ -96,6 +99,7 @@ def get_polygon_news(ticker, max_hours):
     return None
 
 def analyze_news_with_gemini(ticker, news_title):
+    """Resmi Google Generative AI kütüphanesiyle haberi doğrudan analiz eder."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = (
@@ -109,6 +113,7 @@ def analyze_news_with_gemini(ticker, news_title):
     except Exception as e:
         return f"YON: Nötr\nACIKLAMA: Yapay zeka analiz hatası: {str(e)}"
 
+# Streamlit Önbellek Koruması (Kota Aşımını Engellemek İçin)
 @st.cache_data(show_spinner=False)
 def get_cached_ai_analysis(ticker, news_title):
     return analyze_news_with_gemini(ticker, news_title)
@@ -183,7 +188,7 @@ if st.button("🔍 Yapay Cihan / Borsa Analizini Başlat"):
             df = pd.DataFrame(results)
             st.dataframe(df[["Hisse", "Fiyat", "Hacim", "Haber Tarihi", "Yön"]], use_container_width=True)
             
-            st.write("### 🧠 Yapay Zeka Detaylı Analiz Kartları ve Grafik Terminali")
+            st.write("### 🧠 Yapay Zeka Detaylı Analiz Kartları ve Canlı Grafik Terminali")
             
             # NYSE veya AMEX üzerinde olan hisseler için borsa belirleme
             exchange_map = {"INUV": "AMEX", "SOAR": "NYSE", "OPTT": "AMEX"}
@@ -203,43 +208,28 @@ if st.button("🔍 Yapay Cihan / Borsa Analizini Başlat"):
                 exchange = exchange_map.get(res["Hisse"], "NASDAQ")
                 tv_symbol = f"{exchange}:{res['Hisse']}"
                 
-                # TradingView Mini Mum Grafik HTML'i
+                # --- SAF VE ENGELLEMELERE TAKILMAYAN HTML GRAFİK PENCERESİ ---
                 chart_html = f"""
-                <div class="tradingview-widget-container">
-                  <div class="tradingview-widget-container__widget"></div>
-                  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js" async>
-                  {{
-                    "symbol": "{tv_symbol}",
-                    "width": "100%",
-                    "height": 220,
-                    "locale": "en",
-                    "dateRange": "12M",
-                    "colorTheme": "dark",
-                    "isTransparent": true,
-                    "autosize": false,
-                    "largeChartUrl": ""
-                  }}
-                  </script>
-                </div>
+                <iframe src="https://s3.tradingview.com/widgetembed/?symbol={tv_symbol}&interval=D&theme=dark&style=1&timezone=Etc%2FUTC" 
+                        width="100%" 
+                        height="250" 
+                        frameborder="0" 
+                        allowtransparency="true" 
+                        scrolling="no" 
+                        style="margin: 0; padding: 0; border-radius: 10px;">
+                </iframe>
                 """
                 
-                # TradingView Teknik Analiz Kadranı (Gauge) HTML'i
+                # --- SAF HTML TEKNİK ANALİZ GÖSTERGESİ ---
                 gauge_html = f"""
-                <div class="tradingview-widget-container">
-                  <div class="tradingview-widget-container__widget"></div>
-                  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js" async>
-                  {{
-                    "interval": "1D",
-                    "width": "100%",
-                    "isTransparent": true,
-                    "height": 220,
-                    "symbol": "{tv_symbol}",
-                    "showIntervalTabs": false,
-                    "locale": "en",
-                    "colorTheme": "dark"
-                  }}
-                  </script>
-                </div>
+                <iframe src="https://s3.tradingview.com/embed-widget/technical-analysis/?symbol={tv_symbol}&interval=1D&theme=dark" 
+                        width="100%" 
+                        height="250" 
+                        frameborder="0" 
+                        allowtransparency="true" 
+                        scrolling="no" 
+                        style="margin: 0; padding: 0; border-radius: 10px;">
+                </iframe>
                 """
 
                 # Kart Başlığı
@@ -254,12 +244,12 @@ if st.button("🔍 Yapay Cihan / Borsa Analizini Başlat"):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # TradingView Grafiği ve Teknik Gösterge Kadrani Yan Yana (Telefonda alt alta otomatik sığar)
+                # Grafik ve Teknik Gösterge Kadrani Yan Yana (Telefonda otomatik alt alta sığar)
                 col1, col2 = st.columns(2)
                 with col1:
-                    components.html(chart_html, height=230)
+                    components.html(chart_html, height=255)
                 with col2:
-                    components.html(gauge_html, height=230)
+                    components.html(gauge_html, height=255)
                 
                 # Midas Hızlı Erişim İşlem Butonu
                 st.markdown(f"""
