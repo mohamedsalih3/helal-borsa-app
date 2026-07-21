@@ -217,52 +217,27 @@ if start_scan:
             df = pd.DataFrame(results)
             st.dataframe(df[["Ticker", "Price", "Volume", "News Date", "Sentiment"]], use_container_width=True)
             
-            st.write("### 🧠 AI Detailed Analysis Cards & Live Chart Terminal")
+            st.write("### 🧠 AI Detailed Analysis Cards & Action Terminal")
             
-            # Map non-NASDAQ exchanges
             exchange_map = {"INUV": "AMEX", "SOAR": "NYSE", "OPTT": "AMEX"}
             
             for res in results:
                 if "Bullish" in res["Sentiment"]:
-                    color_border = "#00C805" # Midas Green for positive sentiment border
+                    color_border = "#00C805"
                     emoji = "🟩 Bullish (Upward Signal)"
                 elif "Bearish" in res["Sentiment"]:
-                    color_border = "#FF3B30" # Red
+                    color_border = "#FF3B30"
                     emoji = "🟥 Bearish (Downward Signal)"
                 else:
-                    color_border = "#8E8E93" # Gray
+                    color_border = "#8E8E93"
                     emoji = "🟨 Neutral"
                 
                 exchange = exchange_map.get(res["Ticker"], "NASDAQ")
                 tv_symbol = f"{exchange}:{res['Ticker']}"
-                
-                # Pure HTML Live Chart
-                chart_html = f"""
-                <iframe src="https://s.tradingview.com/widgetembed/?symbol={tv_symbol}&interval=D&theme=dark&style=1&timezone=Etc%2FUTC" 
-                        width="100%" 
-                        height="250" 
-                        frameborder="0" 
-                        allowtransparency="true" 
-                        scrolling="no" 
-                        style="margin: 0; padding: 0; border-radius: 10px;">
-                </iframe>
-                """
-                
-                # Pure HTML Technical Analysis Gauge
-                gauge_html = f"""
-                <iframe src="https://s.tradingview.com/embed-widget/technical-analysis/?symbol={tv_symbol}&interval=1D&theme=dark" 
-                        width="100%" 
-                        height="250" 
-                        frameborder="0" 
-                        allowtransparency="true" 
-                        scrolling="no" 
-                        style="margin: 0; padding: 0; border-radius: 10px;">
-                </iframe>
-                """
+                tv_chart_url = f"https://www.tradingview.com/symbols/{tv_symbol}/"
 
-                # Render Card
                 st.markdown(f"""
-                <div style="border: 2px solid {color_border}; padding: 15px; border-radius: 10px; margin-bottom: 10px; background-color: rgba(255,255,255,0.03)">
+                <div style="border: 2px solid {color_border}; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: rgba(255,255,255,0.03)">
                     <h3 style="margin:0;">📊 Ticker: <span style="color:#00D2FF">{res['Ticker']}</span> | Price: {res['Price']} | Volume: {res['Volume']}</h3>
                     <p style="margin-top:5px; margin-bottom:5px;"><b>AI Signal:</b> {emoji}</p>
                     <p style="margin-bottom:5px;"><b>Latest News:</b> <a href="{res['News Link']}" target="_blank">{res['News']}</a> <i>({res['News Date']})</i></p>
@@ -272,24 +247,25 @@ if start_scan:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Render Charts side-by-side
                 col1, col2 = st.columns(2)
                 with col1:
-                    components.html(chart_html, height=255)
+                    st.markdown(f"""
+                    <a href="{tv_chart_url}" target="_blank" style="text-decoration:none;">
+                        <button style="background-color:#1E293B; color:#F8FAFC; border:1px solid #475569; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-size:15px; width:100%;">
+                            📊 View Live Chart
+                        </button>
+                    </a>
+                    """, unsafe_allow_html=True)
                 with col2:
-                    components.html(gauge_html, height=255)
-                
-                # Midas Trading Deep Link Button (Blue #0062FF)
-                st.markdown(f"""
-                <div style="margin-bottom: 40px; margin-top: 5px;">
+                    st.markdown(f"""
                     <a href="https://www.getmidas.com/" target="_blank" style="text-decoration:none;">
                         <button style="background-color:#0062FF; color:white; border:none; padding:10px 20px; border-radius:5px; font-weight:bold; cursor:pointer; font-size:15px; width:100%;">
                             📱 Trade on Midas App
                         </button>
                     </a>
-                </div>
-                <hr style="border: 1px solid rgba(255,255,255,0.1); margin-bottom:30px;">
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
+                
+                st.markdown('<hr style="border: 1px solid rgba(255,255,255,0.05); margin-bottom:20px; margin-top:20px;">', unsafe_allow_html=True)
                 
         else:
             st.warning("No matching stocks found with your current filters.")
