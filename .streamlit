@@ -1,0 +1,14 @@
+[theme]
+# Midas Yeşili vurgu rengi
+primaryColor = "#00C805"
+
+# Premium koyu arka plan rengi
+backgroundColor = "#0F172A"
+
+# Sol panel ve kartların koyu arka plan rengi
+secondaryBackgroundColor = "#1E293B"
+
+# Açık renkli okunabilir metin rengi
+textColor = "#F8FAFC"
+
+font = "sans serif"
