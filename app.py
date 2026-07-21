@@ -234,7 +234,7 @@ if start_scan:
                 
                 exchange = exchange_map.get(res["Ticker"], "NASDAQ")
                 tv_symbol = f"{exchange}:{res['Ticker']}"
-                tv_chart_url = f"https://www.tradingview.com/symbols/{tv_symbol}/"
+                tv_chart_url = f"https://www.tradingview.com/chart/?symbol={tv_symbol}"
 
                 st.markdown(f"""
                 <div style="border: 2px solid {color_border}; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: rgba(255,255,255,0.03)">
