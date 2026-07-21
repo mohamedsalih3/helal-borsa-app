@@ -1,11 +1,11 @@
 import os
 import time
 import requests
+import datetime
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 import google.generativeai as genai
-from datetime import datetime, timezone
+from datetime import datetime as dt, timezone
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -27,7 +27,7 @@ st.write("Powered by official Google Gemini AI & Live TradingView Charts.")
 # Sidebar - User Inputs
 st.sidebar.header("⚙️ Application Settings")
 
-# Verified halal stock watchlist (KNDI removed, total 24 stocks)
+# Watchlist
 default_watchlist = (
     "TDTH, INUV, TYGO, JZXN, HAO, CCTG, LHSW, LGCL, LIMN, POAS, SOAR, JLHL, "
     "CAN, REKR, ZVIA, CERS, SGMO, ORGO, VSEE, DDD, SENS, AMTX, OPTT, AEMD"
@@ -38,14 +38,13 @@ watchlist = [t.strip().upper() for t in watchlist_input.split(",") if t.strip()]
 # Price Limit Slider
 price_limit = st.sidebar.slider("Maximum Stock Price ($):", min_value=1.0, max_value=20.0, value=10.0, step=0.5)
 
-# News Age Limit Selection (Quota Friendly)
+# News Age Limit Selection
 news_age_option = st.sidebar.selectbox(
     "News Age Limit:",
     options=["Last 24 Hours", "Last 3 Days (Recommended)", "Last 1 Week", "Unlimited (Latest News)"],
     index=1
 )
 
-# Map age option to hours
 age_map = {
     "Last 24 Hours": 24,
     "Last 3 Days (Recommended)": 72,
@@ -54,39 +53,44 @@ age_map = {
 }
 max_news_hours = age_map[news_age_option]
 
-# --- STOP BUTTON STATE MANAGEMENT ---
-if "scanning" not in st.session_state:
-    st.session_state.scanning = False
-if "stop_scan" not in st.session_state:
-    st.session_state.stop_scan = False
-
-# Show stop button in the sidebar if scanning is active
-if st.session_state.scanning:
-    if st.sidebar.button("⏹️ Stop Scanning", key="stop_btn"):
-        st.session_state.stop_scan = True
-        st.session_state.scanning = False
-        st.sidebar.warning("Stop signal sent! Execution will halt on the next step...")
-
 # ----------------------------------------------------
 # HELPER FUNCTIONS
 # ----------------------------------------------------
 
-def get_polygon_data(ticker):
-    """Fetches the previous day's close price and trading volume."""
-    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev?adjusted=true&apiKey={POLYGON_KEY}"
+def get_polygon_market_data(ticker):
+    """Fiyatı, hacmi ve son 14 günlük ortalamaya göre Hacim Gücünü (Çarpanı) tek seferde çeker."""
+    today_str = dt.now().strftime("%Y-%m-%d")
+    start_str = (dt.now() - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+    
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start_str}/{today_str}?adjusted=true&sort=desc&limit=15&apiKey={POLYGON_KEY}"
     try:
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
-            if data.get("results"):
-                result = data["results"][0]
-                return {"price": result.get("c"), "volume": result.get("v")}
-    except:
-        pass
+            results = data.get("results", [])
+            if results:
+                recent = results[0]
+                price = recent.get("c")
+                volume = recent.get("v")
+                
+                # Önceki günlerin hacim ortalaması
+                prev_days = results[1:]
+                if prev_days:
+                    avg_vol = sum([day.get("v", 0) for day in prev_days]) / len(prev_days)
+                else:
+                    avg_vol = volume if volume else 1
+                
+                vol_strength = volume / avg_vol if avg_vol > 0 else 1.0
+                return {
+                    "price": price,
+                    "volume": volume,
+                    "vol_strength": f"{vol_strength:.1f}x"
+                }
+    except Exception as e:
+        print(f"Hata ({ticker}): {e}")
     return None
 
 def get_polygon_news(ticker, max_hours):
-    """Fetches the latest news article and validates its publication age."""
     url = f"https://api.polygon.io/v2/reference/news?ticker={ticker}&limit=1&apiKey={POLYGON_KEY}"
     try:
         response = requests.get(url, timeout=5)
@@ -96,8 +100,8 @@ def get_polygon_news(ticker, max_hours):
             if results:
                 pub_utc = results[0].get("published_utc")
                 if pub_utc:
-                    pub_date = datetime.fromisoformat(pub_utc.replace("Z", "+00:00"))
-                    now = datetime.now(timezone.utc)
+                    pub_date = dt.fromisoformat(pub_utc.replace("Z", "+00:00"))
+                    now = dt.now(timezone.utc)
                     diff_hours = (now - pub_date).total_seconds() / 3600
                     
                     if diff_hours <= max_hours:
@@ -111,7 +115,6 @@ def get_polygon_news(ticker, max_hours):
     return None
 
 def analyze_news_with_gemini(ticker, news_title):
-    """Analyzes the news sentiment using official Google Generative AI in English."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
         prompt = (
@@ -125,21 +128,31 @@ def analyze_news_with_gemini(ticker, news_title):
     except Exception as e:
         return f"SENTIMENT: Neutral\nANALYSIS: AI Analysis Error: {str(e)}"
 
-# Streamlit Caching for Quota Preservation
 @st.cache_data(show_spinner=False)
 def get_cached_ai_analysis(ticker, news_title):
     return analyze_news_with_gemini(ticker, news_title)
+
+# --- STOP BUTTON STATE MANAGEMENT ---
+if "scanning" not in st.session_state:
+    st.session_state.scanning = False
+if "stop_scan" not in st.session_state:
+    st.session_state.stop_scan = False
+
+if st.session_state.scanning:
+    if st.sidebar.button("⏹️ Stop Scanning", key="stop_btn"):
+        st.session_state.stop_scan = True
+        st.session_state.scanning = False
+        st.sidebar.warning("Stop signal sent! Execution will halt on the next step...")
 
 # ----------------------------------------------------
 # MAIN SCAN TRIGGER
 # ----------------------------------------------------
 
-# Scan button (disabled while actively scanning)
 start_scan = st.button("🔍 Start AI Analysis & Scan", disabled=st.session_state.scanning)
 
 if start_scan:
     if not POLYGON_KEY or not GEMINI_KEY:
-        st.error("Please add POLYGON_API_KEY and GEMINI_API_KEY to your .env file or Streamlit Secrets.")
+        st.error("Please add POLYGON_API_KEY and GEMINI_API_KEY to your secrets.")
     else:
         st.session_state.scanning = True
         st.session_state.stop_scan = False
@@ -151,23 +164,22 @@ if start_scan:
         total_items = len(watchlist)
         
         for index, ticker in enumerate(watchlist):
-            # Halt if stop signal is triggered
             if st.session_state.stop_scan:
                 status_text.warning("Scanning was interrupted by the user!")
                 st.session_state.scanning = False
                 st.session_state.stop_scan = False
                 st.stop()
             
-            status_text.text(f"Analyzing ({index+1}/{total_items}): {ticker}..." )
+            status_text.text(f"Analyzing ({index+1}/{total_items}): {ticker}...")
             
-            # Fetch Price and Volume
-            stock_data = get_polygon_data(ticker)
+            # Yeni tek istekli veri çekme fonksiyonumuz
+            stock_data = get_polygon_market_data(ticker)
             if stock_data:
                 price = stock_data["price"]
                 volume = stock_data["volume"]
+                vol_strength = stock_data["vol_strength"]
                 
                 if price <= price_limit:
-                    # Fetch News with selected age limit
                     news_data = get_polygon_news(ticker, max_news_hours)
                     
                     if news_data:
@@ -184,7 +196,6 @@ if start_scan:
                             elif line.startswith("ANALYSIS:"):
                                 analysis = line.replace("ANALYSIS:", "").strip()
                     else:
-                        # Skip Gemini to save quota if no recent news exists
                         news_title = f"No current news found within the selected timeframe ({news_age_option})."
                         news_url = "#"
                         news_date = "N/A"
@@ -195,6 +206,7 @@ if start_scan:
                         "Ticker": ticker,
                         "Price": f"${price:.2f}",
                         "Volume": f"{volume:,}",
+                        "Vol Strength": vol_strength,
                         "News": news_title,
                         "News Link": news_url,
                         "News Date": news_date,
@@ -202,7 +214,6 @@ if start_scan:
                         "AI Comment": analysis
                     })
             
-            # 12-second delay to avoid free tier rate-limiting
             time.sleep(12)
             progress_bar.progress((index + 1) / total_items)
             
@@ -215,7 +226,7 @@ if start_scan:
         
         if results:
             df = pd.DataFrame(results)
-            st.dataframe(df[["Ticker", "Price", "Volume", "News Date", "Sentiment"]], use_container_width=True)
+            st.dataframe(df[["Ticker", "Price", "Volume", "Vol Strength", "News Date", "Sentiment"]], use_container_width=True)
             
             st.write("### 🧠 AI Detailed Analysis Cards & Action Terminal")
             
@@ -238,7 +249,7 @@ if start_scan:
 
                 st.markdown(f"""
                 <div style="border: 2px solid {color_border}; padding: 15px; border-radius: 10px; margin-bottom: 15px; background-color: rgba(255,255,255,0.03)">
-                    <h3 style="margin:0;">📊 Ticker: <span style="color:#00D2FF">{res['Ticker']}</span> | Price: {res['Price']} | Volume: {res['Volume']}</h3>
+                    <h3 style="margin:0;">📊 Ticker: <span style="color:#00D2FF">{res['Ticker']}</span> | Price: {res['Price']} | Volume: {res['Volume']} (<span style="color:#00C805">{res['Vol Strength']}</span>)</h3>
                     <p style="margin-top:5px; margin-bottom:5px;"><b>AI Signal:</b> {emoji}</p>
                     <p style="margin-bottom:5px;"><b>Latest News:</b> <a href="{res['News Link']}" target="_blank">{res['News']}</a> <i>({res['News Date']})</i></p>
                     <p style="font-size: 15px; background-color: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; margin-bottom: 15px;">
